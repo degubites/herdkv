@@ -1,0 +1,16 @@
+{
+  "name": "Degubites.HerdKV.Unity",
+  "rootNamespace": "Degubites.HerdKV",
+  "references": [
+    "Degubites.HerdKV.Core"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

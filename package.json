@@ -1,0 +1,55 @@
+{
+  "name": "com.degubites.herdkv",
+  "displayName": "HerdKV",
+  "version": "0.9.0",
+  "unity": "2021.3",
+  "description": "Unity-first embedded key-value store for save data and local game state. Pure C#, no native plugin.",
+  "keywords": [
+    "save",
+    "storage",
+    "key-value",
+    "kv",
+    "database"
+  ],
+  "author": {
+    "name": "Degubites"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://codeberg.org/degubites/herdkv.git"
+  },
+  "dependencies": {},
+  "samples": [
+    {
+      "displayName": "Basic Save",
+      "description": "Open a local database, write a player name, and increment a launch counter.",
+      "path": "Samples~/BasicSave"
+    },
+    {
+      "displayName": "Auto Save",
+      "description": "Flush save data on application pause and quit.",
+      "path": "Samples~/AutoSave"
+    },
+    {
+      "displayName": "Inventory Save",
+      "description": "Save and load a small inventory using typed HerdKV values.",
+      "path": "Samples~/InventorySave"
+    },
+    {
+      "displayName": "World Chunk Save",
+      "description": "Save and load chunk payloads by coordinate key.",
+      "path": "Samples~/WorldChunkSave"
+    },
+    {
+      "displayName": "Settings Save",
+      "description": "Save local game settings with built-in codecs.",
+      "path": "Samples~/SettingsSave"
+    },
+    {
+      "displayName": "Migration Example",
+      "description": "Open a database with schema migrations.",
+      "path": "Samples~/MigrationExample"
+    }
+  ]
+}

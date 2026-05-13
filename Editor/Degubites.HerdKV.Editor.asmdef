@@ -1,0 +1,19 @@
+{
+  "name": "Degubites.HerdKV.Editor",
+  "rootNamespace": "Degubites.HerdKV.Editor",
+  "references": [
+    "Degubites.HerdKV.Core",
+    "Degubites.HerdKV.Unity"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

@@ -1,0 +1,28 @@
+# Development context
+context/
+
+# .NET
+bin/
+obj/
+TestResults/
+
+# Unity
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+MemoryCaptures/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+*.csproj.user
+
+# OS
+.DS_Store
+Thumbs.db
