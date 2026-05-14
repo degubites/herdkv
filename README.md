@@ -67,13 +67,13 @@ await using var migrated = await HerdKVStore.OpenAsync("./save", options);
 ## Benchmarks
 
 ```text
-dotnet run -c Release --project benchmarks/HerdKV.Benchmarks/HerdKV.Benchmarks.csproj
+dotnet run -c Release --project Development~/benchmarks/HerdKV.Benchmarks/HerdKV.Benchmarks.csproj
 ```
 
 ## Tests
 
 ```text
-dotnet run --project tests/Degubites.HerdKV.Tests/Degubites.HerdKV.Tests.csproj
+dotnet run --project Development~/tests/Degubites.HerdKV.Tests/Degubites.HerdKV.Tests.csproj
 ```
 
 ## Editor Viewer
@@ -82,17 +82,17 @@ Open `Window > HerdKV > Viewer` in the Unity Editor to inspect local HerdKV data
 
 ## Docs
 
-- [Getting Started](docs/getting-started.md)
-- [Unity Installation](docs/unity-installation.md)
-- [.NET Console Usage](docs/dotnet-console.md)
-- [Public API](docs/public-api.md)
-- [File Format](docs/file-format.md)
-- [Crash Recovery](docs/crash-recovery.md)
-- [Codecs](docs/codecs.md)
-- [Migrations](docs/migrations.md)
-- [Editor Viewer](docs/editor-viewer.md)
-- [Performance](docs/performance.md)
-- [Benchmarks](docs/benchmarks.md)
-- [Samples](docs/samples.md)
-- [Limitations](docs/limitations.md)
-- [FAQ](docs/faq.md)
+- [Getting Started](Documentation~/manual/getting-started.md)
+- [Unity Installation](Documentation~/manual/unity-installation.md)
+- [.NET Console Usage](Documentation~/manual/dotnet-console.md)
+- [Public API](Documentation~/manual/public-api.md)
+- [File Format](Documentation~/manual/file-format.md)
+- [Crash Recovery](Documentation~/manual/crash-recovery.md)
+- [Codecs](Documentation~/manual/codecs.md)
+- [Migrations](Documentation~/manual/migrations.md)
+- [Editor Viewer](Documentation~/manual/editor-viewer.md)
+- [Performance](Documentation~/manual/performance.md)
+- [Benchmarks](Documentation~/manual/benchmarks.md)
+- [Samples](Documentation~/manual/samples.md)
+- [Limitations](Documentation~/manual/limitations.md)
+- [FAQ](Documentation~/manual/faq.md)
