@@ -14,6 +14,7 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
     private readonly string _path;
     private readonly HerdKVOptions _options;
     private readonly Dictionary<string, IndexEntry> _index = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, byte[]> _values = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     private int _minSegmentId = 1;
@@ -21,6 +22,8 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
     private long _activeSegmentLength;
     private long _totalBytes;
     private long _sequence;
+    private FileStream? _activeWriter;
+    private int _activeWriterSegmentId;
     private bool _disposed;
 
     private AppendOnlyHerdKVStore(string path, HerdKVOptions options)
@@ -43,20 +46,26 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
     {
         ThrowIfDisposed();
         byte[] keyBytes = HerdKVKey.Encode(key);
+        byte[] valueBytes = value.ToArray();
 
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            int recordLength = HerdKVRecord.GetRecordLength(keyBytes.Length, value.Length);
+            int recordLength = HerdKVRecord.GetRecordLength(keyBytes.Length, valueBytes.Length);
             await EnsureWritableSegmentAsync(recordLength, cancellationToken);
 
             long offset = _activeSegmentLength;
-            byte[] record = HerdKVRecord.Create(keyBytes, value.Span, HerdKVRecordFlags.None, ++_sequence);
+            byte[] record = HerdKVRecord.Create(keyBytes, valueBytes, HerdKVRecordFlags.None, ++_sequence);
             await AppendRecordAsync(_activeSegmentId, record, cancellationToken);
 
             _activeSegmentLength += recordLength;
             _totalBytes += recordLength;
-            _index[key] = new IndexEntry(_activeSegmentId, offset, keyBytes.Length, value.Length, recordLength);
+            _index[key] = new IndexEntry(_activeSegmentId, offset, keyBytes.Length, valueBytes.Length, recordLength);
+
+            if (CacheValuesInMemory)
+            {
+                _values[key] = valueBytes;
+            }
         }
         finally
         {
@@ -76,6 +85,13 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
             {
                 return null;
             }
+
+            if (!_options.VerifyChecksumOnRead && _values.TryGetValue(key, out byte[]? cachedValue))
+            {
+                return Copy(cachedValue);
+            }
+
+            await FlushActiveWriterAsync(cancellationToken);
         }
         finally
         {
@@ -107,6 +123,7 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
             _activeSegmentLength += recordLength;
             _totalBytes += recordLength;
             _index.Remove(key);
+            _values.Remove(key);
             return true;
         }
         finally
@@ -115,11 +132,20 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         }
     }
 
-    public ValueTask FlushAsync(CancellationToken cancellationToken = default)
+    public async ValueTask FlushAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        cancellationToken.ThrowIfCancellationRequested();
-        return default;
+
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await FlushActiveWriterAsync(cancellationToken);
+            await WriteManifestAsync(cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public async ValueTask CompactAsync(CancellationToken cancellationToken = default)
@@ -129,12 +155,17 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            await CloseActiveWriterAsync(cancellationToken);
+
             var live = _index.ToArray();
             int newMinSegmentId = _activeSegmentId + 1;
             int newActiveSegmentId = newMinSegmentId;
             long newActiveLength = 0;
             long newTotalBytes = 0;
             var newIndex = new Dictionary<string, IndexEntry>(StringComparer.Ordinal);
+            Dictionary<string, byte[]>? newValues = CacheValuesInMemory
+                ? new Dictionary<string, byte[]>(StringComparer.Ordinal)
+                : null;
 
             foreach (KeyValuePair<string, IndexEntry> pair in live)
             {
@@ -159,6 +190,7 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
                 newActiveLength += recordLength;
                 newTotalBytes += recordLength;
                 newIndex[pair.Key] = new IndexEntry(newActiveSegmentId, offset, keyBytes.Length, value.Length, recordLength);
+                newValues?.Add(pair.Key, value);
             }
 
             _index.Clear();
@@ -167,10 +199,20 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
                 _index[pair.Key] = pair.Value;
             }
 
+            _values.Clear();
+            if (newValues is not null)
+            {
+                foreach (KeyValuePair<string, byte[]> pair in newValues)
+                {
+                    _values[pair.Key] = pair.Value;
+                }
+            }
+
             _minSegmentId = newMinSegmentId;
             _activeSegmentId = newActiveSegmentId;
             _activeSegmentLength = newActiveLength;
             _totalBytes = newTotalBytes;
+            await CloseActiveWriterAsync(cancellationToken);
             await WriteManifestAsync(cancellationToken);
         }
         finally
@@ -191,11 +233,29 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
             Math.Max(0, _totalBytes - liveBytes));
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        _disposed = true;
-        _gate.Dispose();
-        return default;
+        if (_disposed)
+        {
+            return;
+        }
+
+        await _gate.WaitAsync();
+        try
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            await CloseActiveWriterAsync(CancellationToken.None);
+            _disposed = true;
+        }
+        finally
+        {
+            _gate.Release();
+            _gate.Dispose();
+        }
     }
 
     private async ValueTask OpenCoreAsync(CancellationToken cancellationToken)
@@ -204,6 +264,7 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         ReadManifest();
 
         _index.Clear();
+        _values.Clear();
         _totalBytes = 0;
         _activeSegmentLength = 0;
 
@@ -273,10 +334,15 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
             if ((header.Flags & HerdKVRecordFlags.Tombstone) == HerdKVRecordFlags.Tombstone)
             {
                 _index.Remove(key);
+                _values.Remove(key);
             }
             else
             {
                 _index[key] = new IndexEntry(segmentId, recordOffset, header.KeyLength, header.ValueLength, header.RecordLength);
+                if (CacheValuesInMemory)
+                {
+                    _values[key] = CopyValue(record, header);
+                }
             }
 
             _sequence = Math.Max(_sequence, header.Sequence);
@@ -303,12 +369,21 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
 
         byte[] record = new byte[entry.RecordSizeBytes];
         int read = await ReadAtMostAsync(file, record, cancellationToken);
-        if (read != record.Length || (verifyChecksum && !HerdKVRecord.Validate(record, out HerdKVRecordHeader header)))
+        if (read != record.Length)
         {
-            throw new HerdKVCorruptRecordException($"Record for key '{expectedKey}' failed checksum validation.");
+            throw new HerdKVCorruptRecordException($"Record for key '{expectedKey}' could not be read completely.");
         }
 
-        if (!HerdKVRecord.Validate(record, out HerdKVRecordHeader validatedHeader))
+        HerdKVRecordHeader validatedHeader;
+        if (verifyChecksum)
+        {
+            if (!HerdKVRecord.Validate(record, out validatedHeader))
+            {
+                throw new HerdKVCorruptRecordException($"Record for key '{expectedKey}' failed checksum validation.");
+            }
+        }
+        else if (!HerdKVRecord.TryReadHeader(record.AsSpan(0, HerdKVConstants.HeaderSize), out validatedHeader)
+            || validatedHeader.RecordLength != record.Length)
         {
             throw new HerdKVCorruptRecordException($"Record for key '{expectedKey}' is corrupt.");
         }
@@ -338,6 +413,7 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
     {
         if (_activeSegmentLength > 0 && _activeSegmentLength + recordLength > _options.SegmentSizeBytes)
         {
+            await CloseActiveWriterAsync(cancellationToken);
             _activeSegmentId++;
             _activeSegmentLength = 0;
             await WriteManifestAsync(cancellationToken);
@@ -346,9 +422,47 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
 
     private async ValueTask AppendRecordAsync(int segmentId, byte[] record, CancellationToken cancellationToken)
     {
-        await using var file = new FileStream(GetSegmentPath(segmentId), FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+        FileStream file = await GetActiveWriterAsync(segmentId, cancellationToken);
         await file.WriteAsync(record, 0, record.Length, cancellationToken);
-        await file.FlushAsync(cancellationToken);
+    }
+
+    private async ValueTask<FileStream> GetActiveWriterAsync(int segmentId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_activeWriter is not null && _activeWriterSegmentId == segmentId)
+        {
+            return _activeWriter;
+        }
+
+        await CloseActiveWriterAsync(cancellationToken);
+
+        var file = new FileStream(GetSegmentPath(segmentId), FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite);
+        file.Position = file.Length;
+        _activeWriter = file;
+        _activeWriterSegmentId = segmentId;
+        return file;
+    }
+
+    private async ValueTask FlushActiveWriterAsync(CancellationToken cancellationToken)
+    {
+        if (_activeWriter is not null)
+        {
+            await _activeWriter.FlushAsync(cancellationToken);
+        }
+    }
+
+    private async ValueTask CloseActiveWriterAsync(CancellationToken cancellationToken)
+    {
+        if (_activeWriter is null)
+        {
+            return;
+        }
+
+        await _activeWriter.FlushAsync(cancellationToken);
+        await _activeWriter.DisposeAsync();
+        _activeWriter = null;
+        _activeWriterSegmentId = 0;
     }
 
     private void ReadManifest()
@@ -407,6 +521,8 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         return Path.Combine(_path, $"{segmentId:D6}{HerdKVConstants.SegmentExtension}");
     }
 
+    private bool CacheValuesInMemory => !_options.VerifyChecksumOnRead;
+
     private static async ValueTask<int> ReadAtMostAsync(FileStream file, byte[] buffer, CancellationToken cancellationToken)
     {
         return await ReadAtMostAsync(file, buffer.AsMemory(), cancellationToken);
@@ -427,6 +543,25 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         }
 
         return totalRead;
+    }
+
+    private static byte[] Copy(byte[] value)
+    {
+        var copy = new byte[value.Length];
+        Buffer.BlockCopy(value, 0, copy, 0, value.Length);
+        return copy;
+    }
+
+    private static byte[] CopyValue(byte[] record, HerdKVRecordHeader header)
+    {
+        var value = new byte[header.ValueLength];
+        Buffer.BlockCopy(
+            record,
+            HerdKVConstants.HeaderSize + header.KeyLength,
+            value,
+            0,
+            value.Length);
+        return value;
     }
 
     private void ThrowIfDisposed()
