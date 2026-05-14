@@ -24,6 +24,7 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
     private long _sequence;
     private FileStream? _activeWriter;
     private int _activeWriterSegmentId;
+    private bool _activeWriterDirty;
     private bool _disposed;
 
     private AppendOnlyHerdKVStore(string path, HerdKVOptions options)
@@ -424,6 +425,7 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
     {
         FileStream file = await GetActiveWriterAsync(segmentId, cancellationToken);
         await file.WriteAsync(record, 0, record.Length, cancellationToken);
+        _activeWriterDirty = true;
     }
 
     private async ValueTask<FileStream> GetActiveWriterAsync(int segmentId, CancellationToken cancellationToken)
@@ -441,14 +443,16 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         file.Position = file.Length;
         _activeWriter = file;
         _activeWriterSegmentId = segmentId;
+        _activeWriterDirty = false;
         return file;
     }
 
     private async ValueTask FlushActiveWriterAsync(CancellationToken cancellationToken)
     {
-        if (_activeWriter is not null)
+        if (_activeWriter is not null && _activeWriterDirty)
         {
             await _activeWriter.FlushAsync(cancellationToken);
+            _activeWriterDirty = false;
         }
     }
 
@@ -459,10 +463,11 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
             return;
         }
 
-        await _activeWriter.FlushAsync(cancellationToken);
+        await FlushActiveWriterAsync(cancellationToken);
         await _activeWriter.DisposeAsync();
         _activeWriter = null;
         _activeWriterSegmentId = 0;
+        _activeWriterDirty = false;
     }
 
     private void ReadManifest()

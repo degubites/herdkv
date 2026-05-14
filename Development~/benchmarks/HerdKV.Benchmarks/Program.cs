@@ -21,8 +21,10 @@ internal static class Program
 
         await RunPutBenchmark(root, SmallRecordCount);
         await RunPutBenchmark(root, MediumRecordCount);
-        await RunHotGetBenchmark(root);
-        await RunRandomGetBenchmark(root);
+        await RunHotGetBenchmark(root, verifyChecksumOnRead: true);
+        await RunHotGetBenchmark(root, verifyChecksumOnRead: false);
+        await RunRandomGetBenchmark(root, verifyChecksumOnRead: true);
+        await RunRandomGetBenchmark(root, verifyChecksumOnRead: false);
         await RunStartupRecoveryBenchmark(root);
         await RunRepeatedWriteCompactionBenchmark(root);
 
@@ -51,12 +53,13 @@ internal static class Program
         PrintStats(db.GetStats());
     }
 
-    private static async Task RunHotGetBenchmark(string root)
+    private static async Task RunHotGetBenchmark(string root, bool verifyChecksumOnRead)
     {
-        string path = Path.Combine(root, "get-hot");
+        string mode = verifyChecksumOnRead ? "safe" : "fast";
+        string path = Path.Combine(root, $"get-hot-{mode}");
         ResetDirectory(path);
 
-        await using IHerdKVStore db = await HerdKVStore.OpenAsync(path);
+        await using IHerdKVStore db = await HerdKVStore.OpenAsync(path, CreateOptions(verifyChecksumOnRead));
         await db.PutAsync("hot", Encoding.UTF8.GetBytes("hot-value"));
         await db.FlushAsync();
 
@@ -72,15 +75,16 @@ internal static class Program
             }
         });
 
-        PrintResult($"Get hot {RandomGetCount:N0}", RandomGetCount, result);
+        PrintResult($"Get hot {mode} {RandomGetCount:N0}", RandomGetCount, result);
     }
 
-    private static async Task RunRandomGetBenchmark(string root)
+    private static async Task RunRandomGetBenchmark(string root, bool verifyChecksumOnRead)
     {
-        string path = Path.Combine(root, "get-random");
+        string mode = verifyChecksumOnRead ? "safe" : "fast";
+        string path = Path.Combine(root, $"get-random-{mode}");
         ResetDirectory(path);
 
-        await using IHerdKVStore db = await HerdKVStore.OpenAsync(path);
+        await using IHerdKVStore db = await HerdKVStore.OpenAsync(path, CreateOptions(verifyChecksumOnRead));
 
         byte[] value = Encoding.UTF8.GetBytes("random-value");
         for (int i = 0; i < RandomGetCount; i++)
@@ -104,7 +108,7 @@ internal static class Program
             }
         });
 
-        PrintResult($"Get random {RandomGetCount:N0}", RandomGetCount, result);
+        PrintResult($"Get random {mode} {RandomGetCount:N0}", RandomGetCount, result);
     }
 
     private static async Task RunStartupRecoveryBenchmark(string root)
@@ -196,6 +200,14 @@ internal static class Program
     {
         Console.WriteLine($"  stats total={stats.TotalBytes:N0} B, live={stats.LiveBytes:N0} B, dead={stats.DeadBytes:N0} B, keys={stats.KeyCount:N0}, segments={stats.SegmentCount:N0}");
         Console.WriteLine();
+    }
+
+    private static HerdKVOptions CreateOptions(bool verifyChecksumOnRead)
+    {
+        return new HerdKVOptions
+        {
+            VerifyChecksumOnRead = verifyChecksumOnRead
+        };
     }
 
     private static void ResetDirectory(string path)

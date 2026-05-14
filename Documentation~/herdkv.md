@@ -1,5 +1,7 @@
 # HerdKV Documentation
 
+Korean overview: [README.ko.md](README.ko.md)
+
 Start here:
 
 - [Getting Started](manual/getting-started.md)
