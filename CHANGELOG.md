@@ -5,6 +5,7 @@
 - Added `HerdKVFlushMode` and `HerdKVOptions.FlushMode` with `Manual`, `FlushOnWrite`, and `WriteThrough` modes.
 - Added `HerdKVBatchOperation` and `IHerdKVStore.WriteBatchAsync` for coalesced batch writes.
 - Added `IHerdKVStore.ListKeysAsync` for sorted live-key prefix listing.
+- Added English and Korean Unity save tutorials covering primitives, serializer-owned JSON DTOs, prefix listing, batch writes, and flush points.
 - Coalesced repeated keys inside one batch so hot-key updates write only the final operation.
 - Changed manifest writes to use an atomic temp-file replacement flow.
 - Added tests for batch writes, hot-key coalescing, flush-on-write visibility, and manifest temp-file recovery.

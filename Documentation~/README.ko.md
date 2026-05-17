@@ -172,6 +172,8 @@ HerdKV는 완전한 ACID 데이터베이스가 아닙니다.
 
 ## 더 보기
 
+- [Unity 저장 튜토리얼](manual/unity-save-tutorial.ko.md)
+- [Unity Save Tutorial](manual/unity-save-tutorial.md)
 - [Getting Started](manual/getting-started.md)
 - [Unity Installation](manual/unity-installation.md)
 - [Performance](manual/performance.md)

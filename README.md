@@ -151,6 +151,8 @@ Open `Window > HerdKV > Viewer` in the Unity Editor to inspect local HerdKV data
 
 - [Getting Started](Documentation~/manual/getting-started.md)
 - [Unity Installation](Documentation~/manual/unity-installation.md)
+- [Unity Save Tutorial](Documentation~/manual/unity-save-tutorial.md)
+- [Unity Save Tutorial (Korean)](Documentation~/manual/unity-save-tutorial.ko.md)
 - [.NET Console Usage](Documentation~/manual/dotnet-console.md)
 - [Public API](Documentation~/manual/public-api.md)
 - [File Format](Documentation~/manual/file-format.md)

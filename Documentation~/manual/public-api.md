@@ -31,3 +31,5 @@ Unity helpers:
 - `HerdKVUnity.OpenSlotAsync` opens a save-slot path.
 - `HerdKVSettings` stores default open options in a `ScriptableObject`.
 - `HerdKVAutoFlush` flushes a store on pause and quit.
+
+HerdKV does not own object serialization. For JsonUtility, Newtonsoft.Json, System.Text.Json, MessagePack, or custom binary formats, serialize to `string` or `byte[]` and store the payload with HerdKV codecs.

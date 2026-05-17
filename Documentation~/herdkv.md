@@ -6,6 +6,8 @@ Start here:
 
 - [Getting Started](manual/getting-started.md)
 - [Unity Installation](manual/unity-installation.md)
+- [Unity Save Tutorial](manual/unity-save-tutorial.md)
+- [Unity Save Tutorial (Korean)](manual/unity-save-tutorial.ko.md)
 - [.NET Console Usage](manual/dotnet-console.md)
 - [Public API](manual/public-api.md)
 - [File Format](manual/file-format.md)
