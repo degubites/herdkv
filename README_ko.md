@@ -25,7 +25,7 @@ Packages/com.degubites.herdkv
 특정 릴리즈를 고정하고 싶다면 tag를 붙입니다.
 
 ```text
-https://codeberg.org/degubites/herdkv.git#v0.10.0
+https://codeberg.org/degubites/herdkv.git#v0.10.2
 ```
 
 ## 빠른 예시

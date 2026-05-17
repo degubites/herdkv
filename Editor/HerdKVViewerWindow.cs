@@ -12,12 +12,17 @@ namespace Degubites.HerdKV.Editor
 {
 public sealed class HerdKVViewerWindow : EditorWindow
 {
+    private const string ManifestFileName = "MANIFEST";
+    private const string SegmentExtension = ".hseg";
+
     private string databasePath = string.Empty;
     private string search = string.Empty;
     private Vector2 scroll;
+    private Vector2 databaseScroll;
     private HerdKVInspectionReport? report;
     private HerdKVInspectionEntry? selected;
     private string preview = string.Empty;
+    private IReadOnlyList<string> discoveredDatabases = Array.Empty<string>();
 
     [MenuItem("Window/HerdKV/Viewer")]
     public static void Open()
@@ -28,6 +33,7 @@ public sealed class HerdKVViewerWindow : EditorWindow
     private void OnEnable()
     {
         databasePath = Path.Combine(Application.persistentDataPath, "HerdKV");
+        Refresh();
     }
 
     private void OnGUI()
@@ -60,7 +66,18 @@ public sealed class HerdKVViewerWindow : EditorWindow
 
         if (report is null)
         {
-            EditorGUILayout.HelpBox("Open a HerdKV database folder to inspect keys.", MessageType.Info);
+            if (discoveredDatabases.Count > 0)
+            {
+                EditorGUILayout.HelpBox(
+                    "This folder contains HerdKV databases. Select a database folder below to inspect keys.",
+                    MessageType.Info);
+                DrawDiscoveredDatabases();
+            }
+            else
+            {
+                EditorGUILayout.HelpBox("Open a HerdKV database folder to inspect keys.", MessageType.Info);
+            }
+
             return;
         }
 
@@ -75,6 +92,7 @@ public sealed class HerdKVViewerWindow : EditorWindow
             using (var view = new EditorGUILayout.ScrollViewScope(scroll, GUILayout.Width(position.width * 0.5f)))
             {
                 scroll = view.scrollPosition;
+                bool drewEntry = false;
                 foreach (HerdKVInspectionEntry entry in report.Entries)
                 {
                     if (!string.IsNullOrWhiteSpace(search) &&
@@ -88,12 +106,27 @@ public sealed class HerdKVViewerWindow : EditorWindow
                         selected = entry;
                         LoadPreview();
                     }
+
+                    drewEntry = true;
+                }
+
+                if (!drewEntry)
+                {
+                    EditorGUILayout.HelpBox("No live keys match the current search.", MessageType.Info);
                 }
             }
 
             using (new EditorGUILayout.VerticalScope())
             {
                 EditorGUILayout.LabelField(selected?.Key ?? "No key selected", EditorStyles.boldLabel);
+                if (selected is not null)
+                {
+                    EditorGUILayout.LabelField("Segment", selected.SegmentFileName);
+                    EditorGUILayout.LabelField("Offset", selected.Offset.ToString());
+                    EditorGUILayout.LabelField("Value bytes", selected.ValueSizeBytes.ToString());
+                    EditorGUILayout.LabelField("Record bytes", selected.RecordSizeBytes.ToString());
+                }
+
                 EditorGUILayout.TextArea(preview, GUILayout.ExpandHeight(true));
 
                 using (new EditorGUILayout.HorizontalScope())
@@ -122,10 +155,22 @@ public sealed class HerdKVViewerWindow : EditorWindow
             report = null;
             selected = null;
             preview = string.Empty;
+            discoveredDatabases = Array.Empty<string>();
             Repaint();
             return;
         }
 
+        if (!IsDatabaseFolder(databasePath))
+        {
+            report = null;
+            selected = null;
+            preview = string.Empty;
+            discoveredDatabases = FindDatabaseFolders(databasePath);
+            Repaint();
+            return;
+        }
+
+        discoveredDatabases = Array.Empty<string>();
         report = await HerdKVInspector.InspectAsync(databasePath);
         selected = null;
         preview = string.Empty;
@@ -205,6 +250,93 @@ public sealed class HerdKVViewerWindow : EditorWindow
         catch
         {
             return false;
+        }
+    }
+
+    private void DrawDiscoveredDatabases()
+    {
+        using (var view = new EditorGUILayout.ScrollViewScope(databaseScroll))
+        {
+            databaseScroll = view.scrollPosition;
+            foreach (string path in discoveredDatabases)
+            {
+                string label = MakeDisplayPath(path);
+                if (GUILayout.Button(label, EditorStyles.miniButtonLeft))
+                {
+                    databasePath = path;
+                    Refresh();
+                }
+            }
+        }
+    }
+
+    private string MakeDisplayPath(string path)
+    {
+        string root = Path.Combine(Application.persistentDataPath, "HerdKV");
+        if (path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        {
+            return path.Substring(root.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        return path;
+    }
+
+    private static bool IsDatabaseFolder(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            return false;
+        }
+
+        if (File.Exists(Path.Combine(path, ManifestFileName)))
+        {
+            return true;
+        }
+
+        try
+        {
+            return Directory.EnumerateFiles(path, "*" + SegmentExtension).Any();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static IReadOnlyList<string> FindDatabaseFolders(string root)
+    {
+        var results = new List<string>();
+        CollectDatabaseFolders(root, results, depthRemaining: 3);
+        return results.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static void CollectDatabaseFolders(string root, List<string> results, int depthRemaining)
+    {
+        if (depthRemaining <= 0)
+        {
+            return;
+        }
+
+        string[] directories;
+        try
+        {
+            directories = Directory.GetDirectories(root);
+        }
+        catch
+        {
+            return;
+        }
+
+        foreach (string directory in directories)
+        {
+            if (IsDatabaseFolder(directory))
+            {
+                results.Add(directory);
+            }
+            else
+            {
+                CollectDatabaseFolders(directory, results, depthRemaining - 1);
+            }
         }
     }
 }

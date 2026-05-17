@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.2 - 2026-05-17
+
+- Improved the Editor Viewer so opening the HerdKV container folder discovers child database folders.
+- Added selected entry metadata to the Editor Viewer preview panel.
+
 ## 0.10.1 - 2026-05-17
 
 - Added root Korean README for GitHub and OpenUPM mirrors.
