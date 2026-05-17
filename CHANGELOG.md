@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 - 2026-05-17
 
 - Added `HerdKVFlushMode` and `HerdKVOptions.FlushMode` with `Manual`, `FlushOnWrite`, and `WriteThrough` modes.
 - Added `HerdKVBatchOperation` and `IHerdKVStore.WriteBatchAsync` for coalesced batch writes.
