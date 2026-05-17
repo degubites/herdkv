@@ -2,7 +2,11 @@
 
 HerdKV is a Unity-first embedded key-value store for save data, caches, and frequently updated local game state.
 
-Korean documentation: [README.ko.md](Documentation~/README.ko.md)
+Korean README: [README_ko.md](README_ko.md)
+
+Tutorials: [Unity Save Tutorial](Documentation~/manual/unity-save-tutorial.md) / [Unity Save Tutorial (Korean)](Documentation~/manual/unity-save-tutorial.ko.md)
+
+Issues and feature requests are tracked on Codeberg only: [codeberg.org/degubites/herdkv/issues](https://codeberg.org/degubites/herdkv/issues). GitHub is a read-only mirror for OpenUPM distribution.
 
 ## Install
 
