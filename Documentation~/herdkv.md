@@ -10,6 +10,7 @@ Start here:
 - [Public API](manual/public-api.md)
 - [File Format](manual/file-format.md)
 - [Crash Recovery](manual/crash-recovery.md)
+- [Durability](manual/durability.md)
 - [Codecs](manual/codecs.md)
 - [Migrations](manual/migrations.md)
 - [Editor Viewer](manual/editor-viewer.md)

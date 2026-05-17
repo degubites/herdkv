@@ -41,19 +41,22 @@ Measured on Windows 10 with .NET 8.0.25 in a Release run.
 
 | Scenario | Operations | Elapsed | Ops/s | Allocated/op |
 |---|---:|---:|---:|---:|
-| Put | 1,000 | 11.58 ms | 86,335 | 531 B |
-| Put | 10,000 | 17.73 ms | 563,943 | 501 B |
-| Get hot safe | 5,000 | 2,828.05 ms | 1,768 | 5,811 B |
-| Get hot fast | 5,000 | 0.38 ms | 13,089,005 | 40 B |
-| Get random safe | 5,000 | 2,601.77 ms | 1,922 | 5,896 B |
-| Get random fast | 5,000 | 1.09 ms | 4,571,220 | 88 B |
-| Startup recovery | 10,000 | 33.67 ms | 297,036 | 435 B |
-| Repeated write | 10,000 | 15.53 ms | 644,097 | 317 B |
-| Compact hot key | 1 | 9.68 ms | 103 | 14,768 B |
+| Put | 1,000 | 14.63 ms | 68,336 | 536 B |
+| Put | 10,000 | 20.70 ms | 483,026 | 504 B |
+| Get hot safe | 5,000 | 2,459.11 ms | 2,033 | 5,813 B |
+| Get hot fast | 5,000 | 0.37 ms | 13,383,298 | 40 B |
+| Get random safe | 5,000 | 2,216.22 ms | 2,256 | 5,896 B |
+| Get random fast | 5,000 | 0.98 ms | 5,106,731 | 88 B |
+| Startup recovery | 10,000 | 35.00 ms | 285,694 | 435 B |
+| Repeated write | 10,000 | 18.11 ms | 552,209 | 319 B |
+| Compact hot key | 1 | 11.33 ms | 88 | 19,752 B |
+| Batch repeated write | 10,000 | 10.31 ms | 970,299 | 73 B |
 
 `safe` means the default `VerifyChecksumOnRead=true` mode. Reads go back to the segment file and validate CRC.
 
 `fast` means `VerifyChecksumOnRead=false`. The store keeps values in memory and returns copied bytes on reads. This is usually the better mode for Unity gameplay data when startup recovery and explicit flush points are enough.
+
+`Batch repeated write` uses `WriteBatchAsync` with 10,000 updates to the same key. Batch coalescing writes only the final value, leaving `47 B` total storage, `47 B` live storage, and `0 B` dead storage in this run.
 
 ## Reproduce
 

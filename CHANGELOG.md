@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Added `HerdKVFlushMode` and `HerdKVOptions.FlushMode` with `Manual`, `FlushOnWrite`, and `WriteThrough` modes.
+- Added `HerdKVBatchOperation` and `IHerdKVStore.WriteBatchAsync` for coalesced batch writes.
+- Coalesced repeated keys inside one batch so hot-key updates write only the final operation.
+- Changed manifest writes to use an atomic temp-file replacement flow.
+- Added tests for batch writes, hot-key coalescing, flush-on-write visibility, and manifest temp-file recovery.
+- Documented the `FlushAsync()` durability boundary and flush mode policy.
+- Updated performance and benchmark documentation for batch writes and flush modes.
+
 ## 0.9.0
 
 - Added UPM sample metadata.

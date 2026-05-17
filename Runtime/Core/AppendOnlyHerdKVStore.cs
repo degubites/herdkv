@@ -52,21 +52,42 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            int recordLength = HerdKVRecord.GetRecordLength(keyBytes.Length, valueBytes.Length);
-            await EnsureWritableSegmentAsync(recordLength, cancellationToken);
+            await PutCoreAsync(key, keyBytes, valueBytes, cancellationToken);
+            await FlushAfterWriteIfNeededAsync(cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
-            long offset = _activeSegmentLength;
-            byte[] record = HerdKVRecord.Create(keyBytes, valueBytes, HerdKVRecordFlags.None, ++_sequence);
-            await AppendRecordAsync(_activeSegmentId, record, cancellationToken);
+    public async ValueTask WriteBatchAsync(
+        IEnumerable<HerdKVBatchOperation> operations,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        List<PendingBatchOperation> batch = CoalesceBatchOperations(operations);
+        if (batch.Count == 0)
+        {
+            return;
+        }
 
-            _activeSegmentLength += recordLength;
-            _totalBytes += recordLength;
-            _index[key] = new IndexEntry(_activeSegmentId, offset, keyBytes.Length, valueBytes.Length, recordLength);
-
-            if (CacheValuesInMemory)
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            foreach (PendingBatchOperation operation in batch)
             {
-                _values[key] = valueBytes;
+                if (operation.IsDelete)
+                {
+                    await DeleteCoreAsync(operation.Key, operation.KeyBytes, cancellationToken);
+                }
+                else
+                {
+                    await PutCoreAsync(operation.Key, operation.KeyBytes, operation.ValueBytes!, cancellationToken);
+                }
             }
+
+            await FlushAfterWriteIfNeededAsync(cancellationToken);
         }
         finally
         {
@@ -110,22 +131,9 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            if (!_index.ContainsKey(key))
-            {
-                return false;
-            }
-
-            int recordLength = HerdKVRecord.GetRecordLength(keyBytes.Length, 0);
-            await EnsureWritableSegmentAsync(recordLength, cancellationToken);
-
-            byte[] record = HerdKVRecord.Create(keyBytes, ReadOnlySpan<byte>.Empty, HerdKVRecordFlags.Tombstone, ++_sequence);
-            await AppendRecordAsync(_activeSegmentId, record, cancellationToken);
-
-            _activeSegmentLength += recordLength;
-            _totalBytes += recordLength;
-            _index.Remove(key);
-            _values.Remove(key);
-            return true;
+            bool deleted = await DeleteCoreAsync(key, keyBytes, cancellationToken);
+            await FlushAfterWriteIfNeededAsync(cancellationToken);
+            return deleted;
         }
         finally
         {
@@ -421,11 +429,66 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         }
     }
 
+    private async ValueTask PutCoreAsync(
+        string key,
+        byte[] keyBytes,
+        byte[] valueBytes,
+        CancellationToken cancellationToken)
+    {
+        int recordLength = HerdKVRecord.GetRecordLength(keyBytes.Length, valueBytes.Length);
+        await EnsureWritableSegmentAsync(recordLength, cancellationToken);
+
+        long offset = _activeSegmentLength;
+        byte[] record = HerdKVRecord.Create(keyBytes, valueBytes, HerdKVRecordFlags.None, ++_sequence);
+        await AppendRecordAsync(_activeSegmentId, record, cancellationToken);
+
+        _activeSegmentLength += recordLength;
+        _totalBytes += recordLength;
+        _index[key] = new IndexEntry(_activeSegmentId, offset, keyBytes.Length, valueBytes.Length, recordLength);
+
+        if (CacheValuesInMemory)
+        {
+            _values[key] = valueBytes;
+        }
+    }
+
+    private async ValueTask<bool> DeleteCoreAsync(
+        string key,
+        byte[] keyBytes,
+        CancellationToken cancellationToken)
+    {
+        if (!_index.ContainsKey(key))
+        {
+            _values.Remove(key);
+            return false;
+        }
+
+        int recordLength = HerdKVRecord.GetRecordLength(keyBytes.Length, 0);
+        await EnsureWritableSegmentAsync(recordLength, cancellationToken);
+
+        byte[] record = HerdKVRecord.Create(keyBytes, ReadOnlySpan<byte>.Empty, HerdKVRecordFlags.Tombstone, ++_sequence);
+        await AppendRecordAsync(_activeSegmentId, record, cancellationToken);
+
+        _activeSegmentLength += recordLength;
+        _totalBytes += recordLength;
+        _index.Remove(key);
+        _values.Remove(key);
+        return true;
+    }
+
     private async ValueTask AppendRecordAsync(int segmentId, byte[] record, CancellationToken cancellationToken)
     {
         FileStream file = await GetActiveWriterAsync(segmentId, cancellationToken);
         await file.WriteAsync(record, 0, record.Length, cancellationToken);
         _activeWriterDirty = true;
+    }
+
+    private async ValueTask FlushAfterWriteIfNeededAsync(CancellationToken cancellationToken)
+    {
+        if (_options.FlushMode != HerdKVFlushMode.Manual)
+        {
+            await FlushActiveWriterAsync(cancellationToken);
+        }
     }
 
     private async ValueTask<FileStream> GetActiveWriterAsync(int segmentId, CancellationToken cancellationToken)
@@ -439,7 +502,13 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
 
         await CloseActiveWriterAsync(cancellationToken);
 
-        var file = new FileStream(GetSegmentPath(segmentId), FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite);
+        var file = new FileStream(
+            GetSegmentPath(segmentId),
+            FileMode.OpenOrCreate,
+            FileAccess.Write,
+            FileShare.ReadWrite,
+            bufferSize: 4096,
+            ActiveWriterOptions);
         file.Position = file.Length;
         _activeWriter = file;
         _activeWriterSegmentId = segmentId;
@@ -504,7 +573,59 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
     {
         string text = $"version=1{Environment.NewLine}minSegment={_minSegmentId}{Environment.NewLine}activeSegment={_activeSegmentId}{Environment.NewLine}";
         byte[] bytes = Encoding.UTF8.GetBytes(text);
-        await File.WriteAllBytesAsync(Path.Combine(_path, HerdKVConstants.ManifestFileName), bytes, cancellationToken);
+        await WriteAllBytesAtomicallyAsync(Path.Combine(_path, HerdKVConstants.ManifestFileName), bytes, cancellationToken);
+    }
+
+    private async ValueTask WriteAllBytesAtomicallyAsync(
+        string path,
+        byte[] bytes,
+        CancellationToken cancellationToken)
+    {
+        string tempPath = path + ".tmp";
+        string backupPath = path + ".bak";
+
+        if (File.Exists(tempPath))
+        {
+            File.Delete(tempPath);
+        }
+
+        await using (var file = new FileStream(
+            tempPath,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 4096,
+            ActiveWriterOptions))
+        {
+            await file.WriteAsync(bytes, 0, bytes.Length, cancellationToken);
+            await file.FlushAsync(cancellationToken);
+        }
+
+        if (File.Exists(path))
+        {
+            if (File.Exists(backupPath))
+            {
+                File.Delete(backupPath);
+            }
+
+            try
+            {
+                File.Replace(tempPath, path, backupPath, ignoreMetadataErrors: true);
+                if (File.Exists(backupPath))
+                {
+                    File.Delete(backupPath);
+                }
+            }
+            catch (PlatformNotSupportedException)
+            {
+                File.Delete(path);
+                File.Move(tempPath, path);
+            }
+        }
+        else
+        {
+            File.Move(tempPath, path);
+        }
     }
 
     private int GetHighestSegmentId()
@@ -527,6 +648,44 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
     }
 
     private bool CacheValuesInMemory => !_options.VerifyChecksumOnRead;
+
+    private FileOptions ActiveWriterOptions =>
+        _options.FlushMode == HerdKVFlushMode.WriteThrough ? FileOptions.WriteThrough : FileOptions.None;
+
+    private static List<PendingBatchOperation> CoalesceBatchOperations(IEnumerable<HerdKVBatchOperation> operations)
+    {
+        if (operations is null)
+        {
+            throw new ArgumentNullException(nameof(operations));
+        }
+
+        var batch = new List<PendingBatchOperation>();
+        var indexes = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        foreach (HerdKVBatchOperation? operation in operations)
+        {
+            if (operation is null)
+            {
+                throw new ArgumentException("Batch operations must not contain null entries.", nameof(operations));
+            }
+
+            byte[] keyBytes = HerdKVKey.Encode(operation.Key);
+            byte[]? valueBytes = operation.IsDelete ? null : operation.Value.ToArray();
+            var pending = new PendingBatchOperation(operation.Key, keyBytes, valueBytes, operation.IsDelete);
+
+            if (indexes.TryGetValue(operation.Key, out int index))
+            {
+                batch[index] = pending;
+            }
+            else
+            {
+                indexes.Add(operation.Key, batch.Count);
+                batch.Add(pending);
+            }
+        }
+
+        return batch;
+    }
 
     private static async ValueTask<int> ReadAtMostAsync(FileStream file, byte[] buffer, CancellationToken cancellationToken)
     {
@@ -575,6 +734,25 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         {
             throw new ObjectDisposedException(nameof(AppendOnlyHerdKVStore));
         }
+    }
+
+    private readonly struct PendingBatchOperation
+    {
+        public PendingBatchOperation(string key, byte[] keyBytes, byte[]? valueBytes, bool isDelete)
+        {
+            Key = key;
+            KeyBytes = keyBytes;
+            ValueBytes = valueBytes;
+            IsDelete = isDelete;
+        }
+
+        public string Key { get; }
+
+        public byte[] KeyBytes { get; }
+
+        public byte[]? ValueBytes { get; }
+
+        public bool IsDelete { get; }
     }
 }
 }

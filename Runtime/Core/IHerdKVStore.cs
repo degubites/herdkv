@@ -12,6 +12,8 @@ public interface IHerdKVStore : IAsyncDisposable
 {
     ValueTask PutAsync(string key, ReadOnlyMemory<byte> value, CancellationToken cancellationToken = default);
 
+    ValueTask WriteBatchAsync(IEnumerable<HerdKVBatchOperation> operations, CancellationToken cancellationToken = default);
+
     ValueTask<byte[]?> GetAsync(string key, CancellationToken cancellationToken = default);
 
     ValueTask<bool> DeleteAsync(string key, CancellationToken cancellationToken = default);

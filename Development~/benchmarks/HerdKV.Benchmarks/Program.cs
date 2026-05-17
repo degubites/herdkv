@@ -27,6 +27,7 @@ internal static class Program
         await RunRandomGetBenchmark(root, verifyChecksumOnRead: false);
         await RunStartupRecoveryBenchmark(root);
         await RunRepeatedWriteCompactionBenchmark(root);
+        await RunBatchRepeatedWriteBenchmark(root);
 
         return 0;
     }
@@ -160,6 +161,29 @@ internal static class Program
         PrintResult("Compact hot key", 1, compactResult);
         Console.WriteLine($"  bytes before={before.TotalBytes:N0}, after={after.TotalBytes:N0}, dead after={after.DeadBytes:N0}");
         Console.WriteLine();
+    }
+
+    private static async Task RunBatchRepeatedWriteBenchmark(string root)
+    {
+        string path = Path.Combine(root, "batch-hot-key");
+        ResetDirectory(path);
+
+        await using IHerdKVStore db = await HerdKVStore.OpenAsync(path);
+        var operations = new List<HerdKVBatchOperation>(RepeatedWriteCount);
+        for (int i = 0; i < RepeatedWriteCount; i++)
+        {
+            operations.Add(HerdKVBatchOperation.Put("hot/key", Encoding.UTF8.GetBytes($"value-{i:D8}")));
+        }
+
+        BenchmarkResult result = await MeasureAsync(async () =>
+        {
+            await db.WriteBatchAsync(operations);
+            await db.FlushAsync();
+        });
+
+        HerdKVStats stats = db.GetStats();
+        PrintResult($"Batch repeated write {RepeatedWriteCount:N0}", RepeatedWriteCount, result);
+        PrintStats(stats);
     }
 
     private static async Task<BenchmarkResult> MeasureAsync(Func<Task> action)

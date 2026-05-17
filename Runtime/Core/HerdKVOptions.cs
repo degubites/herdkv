@@ -13,5 +13,7 @@ public sealed class HerdKVOptions
     public long SegmentSizeBytes { get; set; } = 4 * 1024 * 1024;
 
     public bool VerifyChecksumOnRead { get; set; } = true;
+
+    public HerdKVFlushMode FlushMode { get; set; } = HerdKVFlushMode.Manual;
 }
 }

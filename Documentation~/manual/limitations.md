@@ -20,6 +20,7 @@ HerdKV serializes operations inside one store instance and writes append-only re
 Current guarantees are intentionally narrow:
 
 - single-key writes and deletes are appended as individual records
+- batch writes are coalesced for performance but are not multi-key transactions
 - incomplete tail records are ignored during recovery
 - `FlushAsync()` pushes the active writer to the file system and updates the manifest
 - multi-key transactions are not supported
@@ -27,3 +28,5 @@ Current guarantees are intentionally narrow:
 - power-loss durability depends on the OS and storage device; HerdKV does not currently force fsync/write-through semantics
 
 For games, call `FlushAsync()` at explicit save points such as checkpoints, scene transitions, application pause, and quit.
+
+See [Durability](durability.md) for the detailed policy.

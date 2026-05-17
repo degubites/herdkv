@@ -18,6 +18,10 @@ internal static class Program
         ("CompactionShrinksRepeatedWrites", CompactionShrinksRepeatedWrites),
         ("CompactionPreservesDeletes", CompactionPreservesDeletes),
         ("ManifestIgnoresStaleSegmentsAfterCompaction", ManifestIgnoresStaleSegmentsAfterCompaction),
+        ("BatchWritesValuesAndDeletes", BatchWritesValuesAndDeletes),
+        ("BatchCoalescesRepeatedHotKey", BatchCoalescesRepeatedHotKey),
+        ("FlushOnWritePersistsBeforeDispose", FlushOnWritePersistsBeforeDispose),
+        ("AtomicManifestIgnoresTemporaryFile", AtomicManifestIgnoresTemporaryFile),
         ("StringCodecRoundTripSurvivesReopen", StringCodecRoundTripSurvivesReopen),
         ("PrimitiveCodecsRoundTrip", PrimitiveCodecsRoundTrip),
         ("BytesCodecCopiesInput", BytesCodecCopiesInput),
@@ -367,6 +371,119 @@ internal static class Program
                 AssertNull(await reopened.GetAsync("stale/key"), "Manifest should ignore stale lower-numbered segments after compaction.");
                 AssertBytes("new", await reopened.GetAsync("live/key"));
             }
+        }
+        finally
+        {
+            DeleteStorePath(path);
+        }
+    }
+
+    private static async Task BatchWritesValuesAndDeletes()
+    {
+        string path = CreateStorePath();
+        try
+        {
+            await using (IHerdKVStore db = await HerdKVStore.OpenAsync(path))
+            {
+                await db.PutAsync("player/name", Bytes("Alice"));
+
+                await db.WriteBatchAsync(new[]
+                {
+                    HerdKVBatchOperation.Put("player/name", Bytes("Bob")),
+                    HerdKVBatchOperation.Put("player/level", Bytes("7")),
+                    HerdKVBatchOperation.Delete("player/name"),
+                    HerdKVBatchOperation.Delete("missing/key")
+                });
+            }
+
+            await using (IHerdKVStore reopened = await HerdKVStore.OpenAsync(path))
+            {
+                AssertNull(await reopened.GetAsync("player/name"), "Batch delete should remove an existing key.");
+                AssertBytes("7", await reopened.GetAsync("player/level"));
+            }
+        }
+        finally
+        {
+            DeleteStorePath(path);
+        }
+    }
+
+    private static async Task BatchCoalescesRepeatedHotKey()
+    {
+        string path = CreateStorePath();
+        try
+        {
+            await using IHerdKVStore db = await HerdKVStore.OpenAsync(path);
+            var operations = new List<HerdKVBatchOperation>();
+            for (int i = 0; i < 20; i++)
+            {
+                operations.Add(HerdKVBatchOperation.Put("hot/key", Bytes($"value-{i:D2}")));
+            }
+
+            await db.WriteBatchAsync(operations);
+
+            AssertBytes("value-19", await db.GetAsync("hot/key"));
+
+            HerdKVStats stats = db.GetStats();
+            AssertEqual(1, stats.KeyCount, "Batch should leave one live key.");
+            AssertEqual(0L, stats.DeadBytes, "Repeated keys inside one batch should be coalesced before writing.");
+        }
+        finally
+        {
+            DeleteStorePath(path);
+        }
+    }
+
+    private static async Task FlushOnWritePersistsBeforeDispose()
+    {
+        string path = CreateStorePath();
+        IHerdKVStore? db = null;
+        try
+        {
+            db = await HerdKVStore.OpenAsync(path, new HerdKVOptions
+            {
+                FlushMode = HerdKVFlushMode.FlushOnWrite
+            });
+
+            await db.PutAsync("settings/music", Bytes("on"));
+
+            await using (IHerdKVStore reopened = await HerdKVStore.OpenAsync(path))
+            {
+                AssertBytes("on", await reopened.GetAsync("settings/music"));
+            }
+        }
+        finally
+        {
+            if (db is not null)
+            {
+                await db.DisposeAsync();
+            }
+
+            DeleteStorePath(path);
+        }
+    }
+
+    private static async Task AtomicManifestIgnoresTemporaryFile()
+    {
+        string path = CreateStorePath();
+        try
+        {
+            await using (IHerdKVStore db = await HerdKVStore.OpenAsync(path))
+            {
+                await db.PutAsync("stable/key", Bytes("stable"));
+                await db.FlushAsync();
+            }
+
+            string manifestPath = Path.Combine(path, "MANIFEST");
+            File.WriteAllText(manifestPath + ".tmp", "version=1\nminSegment=99\nactiveSegment=99\n");
+
+            await using (IHerdKVStore reopened = await HerdKVStore.OpenAsync(path))
+            {
+                AssertBytes("stable", await reopened.GetAsync("stable/key"));
+            }
+
+            AssertTrue(File.Exists(manifestPath), "Manifest should exist after open.");
+            AssertTrue(!File.Exists(manifestPath + ".bak"), "Atomic manifest backup should not be left behind.");
         }
         finally
         {

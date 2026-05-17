@@ -62,6 +62,19 @@ It is usually not the right tool for:
 
 HerdKV serializes operations inside one store instance and can recover incomplete or corrupt tail records on startup. It does not currently provide multi-key transactions, multi-process isolation, or fsync-level power-loss guarantees. Call `FlushAsync()` at save points such as checkpoints, scene transitions, pause, and quit.
 
+Durability policy: HerdKV treats `FlushAsync()` as the application-level durability boundary. `PutAsync`, `DeleteAsync`, and `WriteBatchAsync` update the store and append records, but in the default `Manual` mode they are not documented as completed save points until the active writer is flushed. See [Durability](Documentation~/manual/durability.md).
+
+For many changes at once, use `WriteBatchAsync`. Repeated keys are coalesced before records are appended, which makes it useful for hot keys such as currency, counters, settings, and frame-end state snapshots.
+
+```csharp
+await db.WriteBatchAsync(new[]
+{
+    HerdKVBatchOperation.Put("player/gold", 250, HerdKVCodecs.Int32),
+    HerdKVBatchOperation.Put("quest/intro", true, HerdKVCodecs.Boolean),
+    HerdKVBatchOperation.Delete("cache/old-thumbnail")
+});
+```
+
 ## Unity
 
 ```csharp
@@ -133,6 +146,7 @@ Open `Window > HerdKV > Viewer` in the Unity Editor to inspect local HerdKV data
 - [Public API](Documentation~/manual/public-api.md)
 - [File Format](Documentation~/manual/file-format.md)
 - [Crash Recovery](Documentation~/manual/crash-recovery.md)
+- [Durability](Documentation~/manual/durability.md)
 - [Codecs](Documentation~/manual/codecs.md)
 - [Migrations](Documentation~/manual/migrations.md)
 - [Editor Viewer](Documentation~/manual/editor-viewer.md)
