@@ -75,6 +75,15 @@ await db.WriteBatchAsync(new[]
 });
 ```
 
+Prefix key listing is available for lightweight local indexes:
+
+```csharp
+IReadOnlyList<string> equipmentKeys = await db.ListKeysAsync("equipment/");
+IReadOnlyList<string> outboxKeys = await db.ListKeysAsync("sync/outbox/");
+```
+
+Use explicit secondary index keys for value-based queries such as rarity, location, or equipped character.
+
 ## Unity
 
 ```csharp

@@ -11,7 +11,7 @@ It is not:
 - a multi-process database
 - a full ACID transaction engine
 
-Use one process per database path. Store your own serialized payloads when saving complex objects.
+Use one process per database path. Store your own serialized payloads when saving complex objects. `ListKeysAsync` supports sorted live-key prefix listing, but HerdKV does not inspect values or maintain automatic secondary indexes.
 
 ## Durability and ACID Scope
 

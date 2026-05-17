@@ -20,6 +20,8 @@ internal static class Program
         ("ManifestIgnoresStaleSegmentsAfterCompaction", ManifestIgnoresStaleSegmentsAfterCompaction),
         ("BatchWritesValuesAndDeletes", BatchWritesValuesAndDeletes),
         ("BatchCoalescesRepeatedHotKey", BatchCoalescesRepeatedHotKey),
+        ("ListKeysReturnsSortedPrefixMatches", ListKeysReturnsSortedPrefixMatches),
+        ("ListKeysReflectsDeletesReopenAndCompaction", ListKeysReflectsDeletesReopenAndCompaction),
         ("FlushOnWritePersistsBeforeDispose", FlushOnWritePersistsBeforeDispose),
         ("AtomicManifestIgnoresTemporaryFile", AtomicManifestIgnoresTemporaryFile),
         ("StringCodecRoundTripSurvivesReopen", StringCodecRoundTripSurvivesReopen),
@@ -427,6 +429,83 @@ internal static class Program
             HerdKVStats stats = db.GetStats();
             AssertEqual(1, stats.KeyCount, "Batch should leave one live key.");
             AssertEqual(0L, stats.DeadBytes, "Repeated keys inside one batch should be coalesced before writing.");
+        }
+        finally
+        {
+            DeleteStorePath(path);
+        }
+    }
+
+    private static async Task ListKeysReturnsSortedPrefixMatches()
+    {
+        string path = CreateStorePath();
+        try
+        {
+            await using IHerdKVStore db = await HerdKVStore.OpenAsync(path);
+
+            await db.PutAsync("equipment/zeta", Bytes("z"));
+            await db.PutAsync("settings/music", Bytes("on"));
+            await db.PutAsync("equipment/alpha", Bytes("a"));
+            await db.PutAsync("equipment/alpha/socket", Bytes("s"));
+            await db.PutAsync("equipment2/not-a-match", Bytes("x"));
+
+            IReadOnlyList<string> equipment = await db.ListKeysAsync("equipment/");
+            AssertSequence(
+                new[] { "equipment/alpha", "equipment/alpha/socket", "equipment/zeta" },
+                equipment,
+                "Prefix scan should return sorted live keys.");
+
+            IReadOnlyList<string> all = await db.ListKeysAsync();
+            AssertSequence(
+                new[]
+                {
+                    "equipment/alpha",
+                    "equipment/alpha/socket",
+                    "equipment/zeta",
+                    "equipment2/not-a-match",
+                    "settings/music"
+                },
+                all,
+                "Empty prefix should return all keys in sorted order.");
+        }
+        finally
+        {
+            DeleteStorePath(path);
+        }
+    }
+
+    private static async Task ListKeysReflectsDeletesReopenAndCompaction()
+    {
+        string path = CreateStorePath();
+        try
+        {
+            await using (IHerdKVStore db = await HerdKVStore.OpenAsync(path))
+            {
+                await db.WriteBatchAsync(new[]
+                {
+                    HerdKVBatchOperation.Put("sync/outbox/003", Bytes("three")),
+                    HerdKVBatchOperation.Put("sync/outbox/001", Bytes("one")),
+                    HerdKVBatchOperation.Put("sync/outbox/002", Bytes("two")),
+                    HerdKVBatchOperation.Delete("sync/outbox/002")
+                });
+
+                IReadOnlyList<string> beforeReopen = await db.ListKeysAsync("sync/outbox/");
+                AssertSequence(
+                    new[] { "sync/outbox/001", "sync/outbox/003" },
+                    beforeReopen,
+                    "Prefix scan should reflect batch deletes before reopen.");
+
+                await db.CompactAsync();
+            }
+
+            await using (IHerdKVStore reopened = await HerdKVStore.OpenAsync(path))
+            {
+                IReadOnlyList<string> afterReopen = await reopened.ListKeysAsync("sync/outbox/");
+                AssertSequence(
+                    new[] { "sync/outbox/001", "sync/outbox/003" },
+                    afterReopen,
+                    "Prefix scan should reflect deletes after compaction and reopen.");
+            }
         }
         finally
         {
@@ -1018,6 +1097,22 @@ internal static class Program
         if (!expected.Equals(actual))
         {
             throw new InvalidOperationException($"{message} Expected '{expected}', got '{actual}'.");
+        }
+    }
+
+    private static void AssertSequence(IReadOnlyList<string> expected, IReadOnlyList<string> actual, string message)
+    {
+        if (expected.Count != actual.Count)
+        {
+            throw new InvalidOperationException($"{message} Expected {expected.Count} keys, got {actual.Count}.");
+        }
+
+        for (int i = 0; i < expected.Count; i++)
+        {
+            if (!string.Equals(expected[i], actual[i], StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"{message} At index {i}, expected '{expected[i]}', got '{actual[i]}'.");
+            }
         }
     }
 

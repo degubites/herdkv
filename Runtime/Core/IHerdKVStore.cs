@@ -16,6 +16,8 @@ public interface IHerdKVStore : IAsyncDisposable
 
     ValueTask<byte[]?> GetAsync(string key, CancellationToken cancellationToken = default);
 
+    ValueTask<IReadOnlyList<string>> ListKeysAsync(string prefix = "", CancellationToken cancellationToken = default);
+
     ValueTask<bool> DeleteAsync(string key, CancellationToken cancellationToken = default);
 
     ValueTask FlushAsync(CancellationToken cancellationToken = default);

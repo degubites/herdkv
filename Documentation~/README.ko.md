@@ -102,6 +102,17 @@ await db.WriteBatchAsync(new[]
 
 이 패턴은 골드, 점수, 카운터, 설정값처럼 짧은 시간에 여러 번 바뀌는 hot key에 특히 유용합니다. 다만 batch는 성능 기능이지 multi-key ACID transaction은 아닙니다.
 
+## Prefix key listing
+
+`ListKeysAsync(prefix)`로 특정 prefix를 가진 live key 목록을 정렬된 상태로 가져올 수 있습니다.
+
+```csharp
+IReadOnlyList<string> equipmentKeys = await db.ListKeysAsync("equipment/");
+IReadOnlyList<string> outboxKeys = await db.ListKeysAsync("sync/outbox/");
+```
+
+이 기능은 장비 목록, sync outbox, 현재 런의 방 기록처럼 key 구조가 명확한 데이터에 잘 맞습니다. 희귀도, 위치, 장착 캐릭터 같은 value 기반 검색은 별도의 secondary index key를 직접 관리하는 편이 좋습니다.
+
 ## Flush mode
 
 `HerdKVOptions.FlushMode`로 쓰기 flush 방식을 고를 수 있습니다.

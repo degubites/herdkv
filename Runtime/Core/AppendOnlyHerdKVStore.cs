@@ -15,6 +15,7 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
     private readonly HerdKVOptions _options;
     private readonly Dictionary<string, IndexEntry> _index = new(StringComparer.Ordinal);
     private readonly Dictionary<string, byte[]> _values = new(StringComparer.Ordinal);
+    private readonly SortedSet<string> _keys = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     private int _minSegmentId = 1;
@@ -123,6 +124,27 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         return await ReadValueAsync(key, entry, _options.VerifyChecksumOnRead, cancellationToken);
     }
 
+    public async ValueTask<IReadOnlyList<string>> ListKeysAsync(
+        string prefix = "",
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (prefix is null)
+        {
+            throw new ArgumentNullException(nameof(prefix));
+        }
+
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            return ListKeysCore(prefix);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async ValueTask<bool> DeleteAsync(string key, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -203,9 +225,11 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
             }
 
             _index.Clear();
+            _keys.Clear();
             foreach (KeyValuePair<string, IndexEntry> pair in newIndex)
             {
                 _index[pair.Key] = pair.Value;
+                _keys.Add(pair.Key);
             }
 
             _values.Clear();
@@ -274,6 +298,7 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
 
         _index.Clear();
         _values.Clear();
+        _keys.Clear();
         _totalBytes = 0;
         _activeSegmentLength = 0;
 
@@ -344,10 +369,12 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
             {
                 _index.Remove(key);
                 _values.Remove(key);
+                _keys.Remove(key);
             }
             else
             {
                 _index[key] = new IndexEntry(segmentId, recordOffset, header.KeyLength, header.ValueLength, header.RecordLength);
+                _keys.Add(key);
                 if (CacheValuesInMemory)
                 {
                     _values[key] = CopyValue(record, header);
@@ -445,6 +472,7 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         _activeSegmentLength += recordLength;
         _totalBytes += recordLength;
         _index[key] = new IndexEntry(_activeSegmentId, offset, keyBytes.Length, valueBytes.Length, recordLength);
+        _keys.Add(key);
 
         if (CacheValuesInMemory)
         {
@@ -460,6 +488,7 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         if (!_index.ContainsKey(key))
         {
             _values.Remove(key);
+            _keys.Remove(key);
             return false;
         }
 
@@ -473,6 +502,7 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
         _totalBytes += recordLength;
         _index.Remove(key);
         _values.Remove(key);
+        _keys.Remove(key);
         return true;
     }
 
@@ -651,6 +681,49 @@ internal sealed class AppendOnlyHerdKVStore : IHerdKVStore
 
     private FileOptions ActiveWriterOptions =>
         _options.FlushMode == HerdKVFlushMode.WriteThrough ? FileOptions.WriteThrough : FileOptions.None;
+
+    private IReadOnlyList<string> ListKeysCore(string prefix)
+    {
+        if (prefix.Length == 0)
+        {
+            return _keys.ToArray();
+        }
+
+        string? upperBound = GetExclusivePrefixUpperBound(prefix);
+        IEnumerable<string> candidates = upperBound is null
+            ? _keys
+            : _keys.GetViewBetween(prefix, upperBound);
+
+        var keys = new List<string>();
+        foreach (string key in candidates)
+        {
+            if (key.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                keys.Add(key);
+            }
+            else if (keys.Count > 0)
+            {
+                break;
+            }
+        }
+
+        return keys;
+    }
+
+    private static string? GetExclusivePrefixUpperBound(string prefix)
+    {
+        char[] chars = prefix.ToCharArray();
+        for (int i = chars.Length - 1; i >= 0; i--)
+        {
+            if (chars[i] < char.MaxValue)
+            {
+                chars[i]++;
+                return new string(chars, 0, i + 1);
+            }
+        }
+
+        return null;
+    }
 
     private static List<PendingBatchOperation> CoalesceBatchOperations(IEnumerable<HerdKVBatchOperation> operations)
     {
