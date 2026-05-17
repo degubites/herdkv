@@ -87,10 +87,16 @@ public static class HerdKVUnity
         char[] invalid = Path.GetInvalidFileNameChars();
         foreach (char c in value)
         {
-            builder.Append(invalid.Contains(c) ? '_' : c);
+            builder.Append(invalid.Contains(c) || c == '/' || c == '\\' ? '_' : c);
         }
 
-        return builder.ToString();
+        string sanitized = builder.ToString().Trim();
+        if (sanitized.Length == 0 || sanitized == "." || sanitized == "..")
+        {
+            throw new ArgumentException("Database or slot name must not resolve to the current or parent directory.", nameof(value));
+        }
+
+        return sanitized;
     }
 }
 }

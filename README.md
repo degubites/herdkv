@@ -162,6 +162,7 @@ Open `Window > HerdKV > Viewer` in the Unity Editor to inspect local HerdKV data
 - [File Format](Documentation~/manual/file-format.md)
 - [Crash Recovery](Documentation~/manual/crash-recovery.md)
 - [Durability](Documentation~/manual/durability.md)
+- [Security Notes](Documentation~/manual/security.md)
 - [Codecs](Documentation~/manual/codecs.md)
 - [Migrations](Documentation~/manual/migrations.md)
 - [Editor Viewer](Documentation~/manual/editor-viewer.md)

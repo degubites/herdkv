@@ -1,7 +1,7 @@
 {
   "name": "com.degubites.herdkv",
   "displayName": "HerdKV",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "unity": "2021.3",
   "description": "Unity-first embedded key-value store for save data and local game state. Pure C#, no native plugin.",
   "keywords": [

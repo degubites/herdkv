@@ -25,7 +25,7 @@ Packages/com.degubites.herdkv
 특정 릴리즈를 고정하고 싶다면 tag를 붙입니다.
 
 ```text
-https://codeberg.org/degubites/herdkv.git#v0.10.2
+https://codeberg.org/degubites/herdkv.git#v0.10.3
 ```
 
 ## 빠른 예시
@@ -117,6 +117,7 @@ HerdKV에서 일반적인 저장 완료 기준은 `FlushAsync()`입니다. 체�
 - [Unity 설치](Documentation~/manual/unity-installation.md)
 - [Public API](Documentation~/manual/public-api.md)
 - [Durability](Documentation~/manual/durability.md)
+- [Security Notes](Documentation~/manual/security.md)
 - [Benchmarks](Documentation~/manual/benchmarks.md)
 - [Samples](Documentation~/manual/samples.md)
 - [Limitations](Documentation~/manual/limitations.md)

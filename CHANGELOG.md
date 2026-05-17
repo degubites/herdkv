@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.3 - 2026-05-17
+
+- Hardened Unity database and slot names against `.` and `..` path segments.
+- Added security notes covering local tampering, checksum scope, raw path usage, and serializer responsibility.
+
 ## 0.10.2 - 2026-05-17
 
 - Improved the Editor Viewer so opening the HerdKV container folder discovers child database folders.

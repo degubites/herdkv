@@ -179,5 +179,6 @@ HerdKV는 완전한 ACID 데이터베이스가 아닙니다.
 - [Performance](manual/performance.md)
 - [Benchmarks](manual/benchmarks.md)
 - [Durability](manual/durability.md)
+- [Security Notes](manual/security.md)
 - [Limitations](manual/limitations.md)
 - [Samples](manual/samples.md)

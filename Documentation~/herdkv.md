@@ -13,6 +13,7 @@ Start here:
 - [File Format](manual/file-format.md)
 - [Crash Recovery](manual/crash-recovery.md)
 - [Durability](manual/durability.md)
+- [Security Notes](manual/security.md)
 - [Codecs](manual/codecs.md)
 - [Migrations](manual/migrations.md)
 - [Editor Viewer](manual/editor-viewer.md)
