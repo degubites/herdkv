@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.1 - 2026-05-17
+
+- Added root Korean README for GitHub and OpenUPM mirrors.
+- Documented Codeberg-only issue tracking and surfaced tutorial links near the README top.
+
 ## 0.10.0 - 2026-05-17
 
 - Added `HerdKVFlushMode` and `HerdKVOptions.FlushMode` with `Manual`, `FlushOnWrite`, and `WriteThrough` modes.
